@@ -1,0 +1,30 @@
+name: CI
+on:
+  push:
+    branches: [main, 'feature/**']
+  pull_request:
+    branches: [main, staging, production]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Show formatting suggestions
+        run: gofmt -d app.go app_test.go
+      - run: go vet ./...
+      - run: go test -race -cover ./...
+      - name: Build container
+        run: docker build --build-arg VERSION="${GITHUB_SHA}" -t studyops-ci .
+      - name: Smoke test
+        shell: bash
+        run: |
+          docker run -d --name studyops-ci -p 127.0.0.1:18888:8888 studyops-ci
+          trap 'docker logs studyops-ci; docker rm -f studyops-ci' EXIT
+          curl --fail --retry 15 --retry-delay 1 --retry-connrefused http://127.0.0.1:18888/healthz
+          curl --fail http://127.0.0.1:18888/api/info
