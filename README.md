@@ -17,8 +17,8 @@ feature/* → Pull Request → main → Pull Request → staging → Pull Reques
 Используйте merge commits при продвижении между ветками окружений.
 
 - feature/* и main: CI на GitHub-hosted Ubuntu.
-- staging: тесты, Docker-сборка и деплой на своём Linux-раннере, localhost:8889.
-- production: тесты, Docker-сборка и деплой на своём Linux-раннере, localhost:8888.
+- staging: тесты, Docker-сборка и деплой на своём Linux-раннере, localhost:8891.
+- production: тесты, Docker-сборка и деплой на своём Linux-раннере, localhost:8892.
 
 ## Linux-раннер
 
@@ -44,21 +44,21 @@ Workflow Deploy запускается только на push в staging и prod
 
 ```bash
 docker build --build-arg VERSION=local -t studyops:local .
-docker run --rm -p 127.0.0.1:8888:8888 studyops:local
+docker run --rm -p 127.0.0.1:8890:8888 studyops:local
 ```
 
-Откройте http://127.0.0.1:8888 на машине с Docker.
+Откройте http://127.0.0.1:8890 на машине с Docker.
 Для удалённой VM используйте SSH-туннель:
 
 ```bash
-ssh -L 8888:127.0.0.1:8888 -L 8889:127.0.0.1:8889 USER@LINUX_HOST
+ssh -L 8892:127.0.0.1:8892 -L 8891:127.0.0.1:8891 USER@LINUX_HOST
 ```
 
 ## Проверка и защита
 
 ```bash
-curl -f http://127.0.0.1:8888/healthz
-curl -f http://127.0.0.1:8888/api/info
+curl -f http://127.0.0.1:8892/healthz
+curl -f http://127.0.0.1:8892/api/info
 docker ps --filter name=studyops
 docker logs studyops-production
 ```
