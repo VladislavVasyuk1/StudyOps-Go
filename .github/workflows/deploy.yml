@@ -1,0 +1,78 @@
+name: Deploy
+on:
+  push:
+    branches: [staging, production]
+permissions:
+  contents: read
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, studyops]
+    environment: ${{ github.ref_name }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test on Linux in Go container
+        run: |
+          docker run --rm -v "$PWD:/src:ro" -w /src golang:1.26-alpine sh -ec 'go vet ./...; go test ./...'
+      - name: Build exact revision
+        run: docker build --build-arg VERSION="${GITHUB_SHA}" -t "studyops:${GITHUB_SHA}" .
+      - name: Deploy and check health
+        env:
+          DEPLOY_ENV: ${{ github.ref_name }}
+          IMAGE: studyops:${{ github.sha }}
+        shell: bash
+        run: |
+          set -- "$DEPLOY_ENV" "$IMAGE"
+          set -Eeuo pipefail
+          stage=${1:?Usage: deploy.sh staging|production IMAGE}
+          image=${2:?Image is required}
+          case "$stage" in
+            staging) port=8889 ;;
+            production) port=8888 ;;
+            *) echo 'Unknown environment' >&2; exit 1 ;;
+          esac
+          name="studyops-$stage"
+          backup="$name-previous"
+          docker image inspect "$image" >/dev/null
+          # Refuse to overwrite an earlier backup requiring manual recovery.
+          if docker container inspect "$backup" >/dev/null 2>&1; then
+            echo "Resolve leftover container $backup before redeploying" >&2
+            exit 1
+          fi
+          had_previous=false
+          if docker container inspect "$name" >/dev/null 2>&1; then
+            docker stop "$name" >/dev/null
+            docker rename "$name" "$backup"
+            had_previous=true
+          fi
+          rollback() {
+            docker logs "$name" 2>/dev/null || true
+            docker rm -f "$name" >/dev/null 2>&1 || true
+            if "$had_previous"; then
+              docker rename "$backup" "$name"
+              docker start "$name" >/dev/null
+              echo "Previous container restored" >&2
+            fi
+          }
+          trap rollback ERR
+          # Loopback binding supports local demonstration; use SSH forwarding for remote access.
+          docker run -d --name "$name" --restart unless-stopped \
+            --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --memory 128m --cpus 1 --pids-limit 100 \
+            -p "127.0.0.1:$port:8888" -e "APP_ENV=$stage" "$image"
+          healthy=false
+          for attempt in $(seq 1 40); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' "$name")
+            if [ "$status" = healthy ]; then healthy=true; break; fi
+            if [ "$status" = unhealthy ]; then break; fi
+            sleep 2
+          done
+          if ! "$healthy"; then echo 'Health check failed' >&2; false; fi
+          curl --fail --silent --show-error "http://127.0.0.1:$port/api/info"
+          trap - ERR
+          if "$had_previous"; then docker rm "$backup" >/dev/null; fi
+          printf '\nDeployed %s at http://127.0.0.1:%s\n' "$image" "$port"
+
