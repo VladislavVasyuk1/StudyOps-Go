@@ -30,8 +30,8 @@ jobs:
           stage=${1:?Usage: deploy.sh staging|production IMAGE}
           image=${2:?Image is required}
           case "$stage" in
-            staging) port=8889 ;;
-            production) port=8888 ;;
+            staging) port=8891 ;;
+            production) port=8892 ;;
             *) echo 'Unknown environment' >&2; exit 1 ;;
           esac
           name="studyops-$stage"
@@ -75,4 +75,3 @@ jobs:
           trap - ERR
           if "$had_previous"; then docker rm "$backup" >/dev/null; fi
           printf '\nDeployed %s at http://127.0.0.1:%s\n' "$image" "$port"
-
